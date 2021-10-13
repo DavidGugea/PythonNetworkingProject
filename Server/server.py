@@ -1,6 +1,7 @@
 import socket # Used for handling connections
 import selectors # High level I/O multiplexing
 import logging # Used for stream & file handling in order to monitor connections to the server socket
+import sqlite3 # Connect to the DB in order to send responses back to the clients in order to check login/register data
 
 class Server:
     def __init__(self, IPv4, PORT, monitoringFileName):
@@ -35,6 +36,10 @@ class Server:
         # Get the stream & file loggers in order to monitor connections to the server
         self.stream_logger, self.file_logger = self.create_file_stream_loggers()
 
+        # Create connection with the database
+        self.DB_CONNECTION = sqlite3.connect("../DB/dummy_db.db")
+        self.DB_CURSOR = self.DB_CONNECTION.cursor()
+
         # Create the default selector
         self.selector = selectors.DefaultSelector() # Kqueue-based selector. Kqueue is a scalable event notification.
 
@@ -64,21 +69,104 @@ class Server:
     def selector_register_handle_messages(self, selector, client_socket_token):
         """
         Not intended for use outside class. It is only intended for the selector to handle messages from the client socket.
+        Read ../Documentation/server_client_communication_blueprint.txt
         """
 
-        message = client_socket_token.recv(1024).decode("utf-8")
-        addr = client_socket_token.getpeername()
+        # Get the client message & its address
+        client_message = client_socket_token.recv(1024).decode("utf-8")
+        client_address = client_socket_token.getpeername()
 
-        if message:
-            print("[{0}] {1}".format(
-                addr,
-                message
-            ))
+        if client_message:
+            if client_message.startswith("{CLIENT_LOGIN_INFO_USERNAME_PASSWORD}"):
+                self.client_login_username_password(client_message, client_socket_token)
         else:
-            print("Connection stopped with {0}".format(addr))
-
+            # Unregister the client socket from the selector && close its connection to the server.
             self.selector.unregister(client_socket_token)
             client_socket_token.close()
+
+            # Use the stream & file loggers in order to monitor the lost connection to the client
+            logger_info_string = "Connection lost with {0}".format(client_address)
+            self.stream_logger.info(logger_info_string)
+            self.file_logger.info(logger_info_string)
+
+    def client_login_username_password(self, client_message, client_socket_token):
+        """
+        The user is at the first point of the login. They want to log in using the username and the password. 
+        The body structure looks like this : {USERNAME:{0}|PASSWORD:{1}}. 
+        The next steps are the following:
+        
+        1. Extract the username & the password from the body
+        2. Check to see if the username and the password are valid credentials inside the db
+        3. Send the response back to the client
+        
+        RESPONSE FROM THE SERVER:
+
+        Successful:
+        SERVER_LOGIN_INFO_USERNAME_PASSWORD_SUCCESSFUL_<UID>
+
+        Username or password wrong:
+        SERVER_LOGIN_INFO_USERNAME_PASSWORD_WRONG
+        """
+
+        ######################### STEP 1 #########################
+        # Extract the body from the client message ( delete the additionally addeded curly braces at the start & the end of the body before extracting the credentials out of it )
+        client_message_body = client_message[client_message.index("}")+2:-1]
+        client_message_body = client_message_body[1:-1]
+
+        # Extract username & password
+        client_message_Username, client_message_Password = client_message_body.split("|")
+        client_message_Username = client_message_Username.split(":")[1]
+        client_message_Password = client_message_Password.split(":")[1]
+        print("CLIENT USERNAME -- > {0}".format(client_message_Username))
+        print("CLIENT PASSWORD -- > {0}".format(client_message_Password))
+        ######################### STEP 1 #########################
+        ######################### STEP 2 #########################
+        user_credentials = self.check_username_password_credentials(client_message_Username, client_message_Password)
+        ######################### STEP 2 #########################
+        ######################### STEP 3 #########################
+        server_response_message = None
+
+        if user_credentials[0]:
+            # ( True , UID )
+            UID = user_credentials[1]
+
+            server_response_message = "SERVER_LOGIN_INFO_USERNAME_PASSWORD_SUCCESSFUL_{0}".format(UID)
+        else:
+            # ( False, None )
+            server_response_message = "SERVER_LOGIN_INFO_USERNAME_PASSWORD_WRONG"
+
+        # Send the response back to the client
+        client_socket_token.send(server_response_message.encode("utf-8"))
+        ######################### STEP 3 #########################
+
+    def check_username_password_credentials(self, username, password):
+        print("CHECKING USERNAME AND PASSWORD CREDENTIALS")
+        """
+        Checks if the given username & password can be found in the db.
+        If found returns:
+        (True, UID) > The UID is the UID found on the row for the given username & password
+        If not found returns:
+        (False, None)
+        """
+
+        # Fetch the data from the DB using the cursor
+        self.DB_CURSOR.execute("SELECT UID, Username, Password FROM users WHERE Username='{0}' AND Password='{1}'".format(
+            username, password
+        ))
+        fetched_user_credentials_UID_username_password = self.DB_CURSOR.fetchone()
+        print(fetched_user_credentials_UID_username_password)
+        print("SELECT UID, Username, Password FROM users WHERE Username='{0}' AND Password='{1}'".format(
+            username, password
+        ))
+
+        if fetched_user_credentials_UID_username_password:
+            print("SENDING BACK TRUE RESPONSE FROM CHECKING USERNAME AND PASSWORD CREDENTIALS")
+            print(fetched_user_credentials_UID_username_password)
+            return (True, fetched_user_credentials_UID_username_password[0])
+        else:
+            print("SENDING BACK FALSE RESPONSE FROM CHECKING USERNAME AND PASSWORD CREDENTIALS")
+            return (False, None)
+
 
     def create_file_stream_loggers(self):
         """
@@ -110,7 +198,7 @@ class Server:
         # Return the loggers inside a tuple > ( STREAM_LOGGER, FILE_LOGGER )
         return ( stream_logger, file_logger )
 
-server = Server(socket.gethostname(), 50000, "connections.log")
+server = Server(socket.gethostname(), 55555, "connections.log")
 
 try:
     while True:

@@ -1,19 +1,18 @@
 import socket
-from ..User import user
+from ..User import user # python -m <top_level>.Client.client
 
 class Client():
     def __init__(self, IPv4, PORT):
         """
-        Creates a client socket including the user interaction inside the console.
-        The IPv4 and the PORT are used to connect to the server socket.
+        Stores the IPv4 and the PORT for future connections to the server.
+        We won't treat the client as a permanently open socket. Every time the client wants to communicate with the server, we will open a socket. 
+        Keeping the server always open and making it a non blocking multiplex server is a good idea since the server always has to talk to multiple client sockets but never
+        knows when it will get those requests, so it always has to be open.
+        On the other side, the client requests can be sent with individual sockets. These sockets might or might not contain information about the client ( such as UID ).
         """
 
-        # Set up the non blocking client socket
-        self.client_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.client_socket.connect(
-            (IPv4, PORT)
-        )
-        self.client_socket.setblocking(False)
+        self.IPv4 = IPv4
+        self.PORT = PORT
 
         # For now, the user will be None
         self.user = None
@@ -29,57 +28,65 @@ class Client():
     
     def login(self):
         """
-        Accepts users input and then logs the user inside of the console.
-        Ask first for the username & password. After a succesfull request, ask the user for the UID. The UID will be inside the response from the server, if the username&password registration was succesfull.
-        After the complete registration, the user will be able to get all the data & communicate with the server
-
-        **************** HEADER STYLE ****************
-
-        Whenever the client sends data to the server we will insert a header in front of the information given from the user
-
-        {HEADER}{BODY}
-
-        The user will never be able to use [] inside the messages sent to the server in order to make sure that we can separate the header from the body. 
-
-        Inside the body we will have data given from the user. It's like an HTTP/HTTPS get request.
-
-        POSSIBLE HEADER VALUES:
-        
-        {CLIENT_LOGIN_INFO_USERNAME_PASSWORD} -> Used when the client is logging in with the username and password
-        Body structure : {USERNAME:{0}|PASSWORD:{1}}
-
-        {CLIENT_LOGIN_INFO_UID} -> Used when the client is logging in with the UID, after a successfull username & password response
-        Body structure : {UID:{0}:|USERNAME:{1}|PASSWORD:{2}|...}
-
-        {CLIENT_MESSAGE} -> Used when the client sends a message
-        Body structure : {ADDRESS_OF_CLIENT_TO_GET_MESSAGE|{0}}
-
-
-        **************** HEADER STYLE ****************
+        Read ../Documentation/server_client_communication_bluerpint.txt 
         """
 
+        # Start the first login steps, by asking the user for the username & password. Afterwards, in case that the input from the user was correct and the response from the server was successful, we'll ask the user about his UID ( User ID )
+        self.LOGIN_USERNAME_PASSWORD()
+
+    def LOGIN_USERNAME_PASSWORD(self):
+        """
+        {CLIENT_LOGIN_INFO_USERNAME_PASSWORD} -> Used when the client is logging in with the username and password
+        Body structure : {USERNAME:{0}|PASSWORD:{1}}
+        RESPONSE FROM THE SERVER:
+        Successful:
+        SERVER_LOGIN_INFO_USERNAME_PASSWORD_SUCCESSFUL_<UID>
+        Username or password wrong:
+        SERVER_LOGIN_INFO_USERNAME_PASSWORD_WRONG
+        """
+
+        # Client a client that will connect to the server for the duration of the login process
+        login_username_password_client = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        login_username_password_client.connect(
+            (self.IPv4, self.PORT)
+        )
+        login_username_password_client.setblocking(True)
+
+        # Ask for username/password credentials
+        username = input("Username: ")
+        password = input("Password: ")
+
+        # Pack the username & password and send them to the server. 
+        HEADER = "{CLIENT_LOGIN_INFO_USERNAME_PASSWORD}"
+        BODY = "{{USERNAME:{0}|PASSWORD:{1}}}".format(
+            username,
+            password
+        )
+
+        # Send the data to the server and wait for a response
+        login_username_password_client.send(
+            "{0}{1}".format(HEADER, BODY).encode("utf-8")
+        )
+
+        # Store here the response from the server
+        SERVER_RESPONSE = None
+        
         while True:
-            # Ask for username/password credentials
-            username = input("Username: ")
-            password = input("Password: ")
-
-            # Pack the username & password and send them to the server. 
-            HEADER = "{CLIENT_LOGIN_INFO_USERNAME_PASSWORD}"
-            BODY = "{USERNAME:{0}|PASSWORD:{1}}".format(
-                username,
-                password
-            )
-
-            # Send the data to the server and wait for a response
-            self.client_socket.send(
-                "{0}{1}".format(HEADER, BODY).encode("utf-8")
-            )
-
             try:
-                while True:
-                    server_login_response = ""
+                server_login_info_username_password_response = login_username_password_client.recv(1024)
+                server_login_info_username_password_response.decode("utf-8")
 
-    
+                if server_login_info_username_password_response:
+                    SERVER_RESPONSE = server_login_info_username_password_response
+                    break
+                else:
+                    continue
+            except Exception:
+                pass
+            
+        print("PRINTING SERVER RESPONSE")
+        print(SERVER_RESPONSE)
+
     def register(self):
         print("REGISTERING")
 
@@ -113,5 +120,5 @@ class Client():
             except ValueError:
                 self.errorMessage("You must input a number.")
 
-client = Client(socket.gethostname(), 50000)
+client = Client(socket.gethostname(), 55555)
 client.start()
