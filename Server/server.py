@@ -1,7 +1,8 @@
 import socket # Used for handling connections
 import selectors # High level I/O multiplexing
 import logging # Used for stream & file handling in order to monitor connections to the server socket
-import sqlite3 # Connect to the DB in order to send responses back to the clients in order to check login/register data
+import sqlite3
+from sqlite3.dbapi2 import IntegrityError # Connect to the DB in order to send responses back to the clients in order to check login/register data
 
 class Server:
     def __init__(self, IPv4, PORT, monitoringFileName):
@@ -15,12 +16,12 @@ class Server:
 
         """
         The currently_connected_users dict will store all the connected usernames and their addresses. 
-        A client can send a message to the server and also specify whom should receive it. We can redirect the message from the server to the specified client that should get the message by searching for its address inside the dict.
+        A client can send a message to the server and also specify who should receive it. We can redirect the message from the server to the specified client that should get the message by searching for its address inside the dict.
         
         The structure of the dict:
         
-        keys : Usernames ( from db, after the client has been registered )
-        values : Client address ( .getpeername () )
+        keys : Username ( from DB, after the client has been registered )
+        values : Client socket token address ( .getpeername () )
         """
         self.currently_connected_users = dict()
 
@@ -79,7 +80,33 @@ class Server:
         if client_message:
             if client_message.startswith("{CLIENT_LOGIN_INFO_USERNAME_PASSWORD}"):
                 self.client_login_username_password(client_message, client_socket_token)
+            elif client_message.startswith("{CLIENT_LOGIN_INFO_UID_NOT_VALID}"):
+                # Use the stream and the file logger to log the failed login - step 2 UID - attempt
+                failed_uid_logger_critical_message = "Wrong UID. Client address : {0}".format(
+                    client_address
+                )
+                self.stream_logger.critical(failed_uid_logger_critical_message)
+                self.file_logger.critical(failed_uid_logger_critical_message)
+            elif client_message.startswith("{CLIENT_LOGIN_INFO_UID_SUCCESSFUL}"):
+                self.client_login_uid(client_message, client_socket_token)
+            elif client_message.startswith("{CLIENT_REGISTER_DATA}"):
+                self.register_user(client_message, client_socket_token)
         else:
+            # Delete the registered UID from the currently connected users dict
+            unregister_client_socket_token_address = client_socket_token.getpeername()
+
+            if unregister_client_socket_token_address in self.currently_connected_users.values():
+                key_to_delete = None
+
+                for key, value in self.currently_connected_users.items():
+                    if value == unregister_client_socket_token_address:
+                        key_to_delete = key
+                        break
+                    else:
+                        continue
+            
+                self.currently_connected_users.pop(key_to_delete)
+
             # Unregister the client socket from the selector && close its connection to the server.
             self.selector.unregister(client_socket_token)
             client_socket_token.close()
@@ -89,11 +116,158 @@ class Server:
             self.stream_logger.info(logger_info_string)
             self.file_logger.info(logger_info_string)
 
+    def register_user(self, client_message, client_socket_token):
+        '''
+        This method will register a new user to the DB and will send a response back to the client.
+
+        Possible server responses:
+        1. {SERVER_REGISTER_INFO_ERROR} -- Send this when something went wrong when trying to add a new user to the database
+        2. {SERVER_REGISTER_INFO_SUCCESSFUL} -- Send this when the server has successfully added a new user to the database
+
+        Steps:
+        
+        1. Extract the body from the client message
+        2. Try to add the new user to the DB and log the interaction using the stream- and file logger
+        3. Send the response back to the client
+        '''
+
+        SERVER_RESPONSE = None
+
+        ############################################## STEP 1 ##############################################
+        # 1. Extract the body from the client message
+
+        client_message_body = client_message[client_message.index("}")+2:-1]
+
+        # Example user data -- > user_data = "UID:12345|Username:testUsername|Password:testPassword|FirstName:testFirstName|LastName:testLastName|Age:17|City:testCity|PostalCode:12345|StreetName:testStreetName|HouseNumber:11|Salary:800"
+        user_data_pipe_split = client_message_body.split("|")
+        user_data = dict()
+        for data in user_data_pipe_split:
+            key, value = data.split(":")
+            user_data[key] = value
+
+        # Update the types inside the user_data where neccessary ( the values that should be integers, are strings )
+        user_data["UID"] = int(user_data["UID"])
+        user_data["Age"] = int(user_data["Age"])
+        user_data["PostalCode"] = int(user_data["PostalCode"])
+        user_data["HouseNumber"] = int(user_data["HouseNumber"])
+        user_data["Salary"] = int(user_data["Salary"])
+
+        ############################################## STEP 1 ##############################################
+        ############################################## STEP 2 ##############################################
+        # 2. Try to add the new user to the DB
+
+        try:
+            user_sql_query = "INSERT INTO users VALUES({0}, '{1}', '{2}', '{3}', '{4}', {5}, '{6}', {7}, '{8}', {9}, {10})".format(*user_data.values())
+
+            self.DB_CURSOR.execute(user_sql_query)
+            self.DB_CONNECTION.commit()
+
+            SERVER_RESPONSE = "{SERVER_REGISTER_INFO_SUCCESSFUL}"
+
+            logger_message = "User successfully registered to the DB. Address -- > {0}".format(
+                client_socket_token.getpeername()
+            )
+            self.stream_logger.info(logger_message)
+            self.file_logger.info(logger_message)
+        except IntegrityError:
+            SERVER_RESPONSE = "{SERVER_REGISTER_INFO_ERROR}"
+
+            logger_message = "User couldn't register to the DB. Address -- > {0}".format(
+                client_socket_token.getpeername()
+            ) 
+            self.stream_logger.critical(logger_message)
+            self.file_logger.critical(logger_message)
+
+        ############################################## STEP 2 ##############################################
+        ############################################## STEP 3 ##############################################
+        # 3. Send the response back to the client
+
+        client_socket_token.send(SERVER_RESPONSE.encode("utf-8"))
+
+        ############################################## STEP 3 ##############################################
+
+    def client_login_uid(self, client_message, client_socket_token):
+        """
+        Sends all the values of the user back to the client based on the given UID that we'll get from the body from the client_message 
+
+        {SERVER_LOGIN_INFO_UID_SUCCESSFULL}{UID:<UID>|Username:<>|Password:<>|FirstName:<>|...}
+
+        Following steps:
+        
+        1. Extract the UID from the body
+        2. Get all the values of the user from the DB based on the given UID from the body
+        3. Save the registered UID and its address & use the stream- and file logger to log the successful connection to the server
+        4. Pack all the values of the user inside a dict and send it back to the client
+        """
+        
+        ######################### STEP 1 #########################
+        # 1. Extract the UID from the body
+        client_message_body = client_message[client_message.index("}")+2:-1]
+
+        client_UID = client_message_body.split(":")[1]
+        ######################### STEP 1 #########################
+        ######################### STEP 2 #########################
+        # 2. Get all the values of the user from the DB based on the given UID from the body
+        user_data = self.DB_get_user_data_with_UID(client_UID)
+        ######################### STEP 2 #########################
+        ######################### STEP 3 #########################
+        # 3. Save the registered UID and its address & use the stream- and file logger to log the successful connection to the server
+
+        self.currently_connected_users[user_data.get("Username")] = client_socket_token.getpeername()
+
+        logger_user_registered_message = "Successful UID login > Username : {0} | Address : {1}".format(
+            user_data.get("UID"),
+            client_socket_token.getpeername()
+        )
+        self.stream_logger.info(logger_user_registered_message)
+        self.file_logger.info(logger_user_registered_message)
+        ######################### STEP 3 #########################
+        ######################### STEP 4 #########################
+        # 4. Pack all the values of the user inside a dict and send it back to the client
+        user_data = str(user_data)
+        client_socket_token.send(user_data.encode("utf-8"))
+        ######################### STEP 4 #########################
+
+    def DB_get_user_data_with_UID(self, client_UID):
+        """
+        Returns the user data base on the given UID
+
+        Return value ( type : dict ):
+        {
+            'UID' : <UID>,
+            'Username' : <Username>,
+            'Password' : <Password>,
+            ...
+        }
+        """
+
+        # Execute the sql query and fetch the data
+        sql_execute_query = "SELECT * FROM users WHERE UID='{0}'".format(client_UID)
+        self.DB_CURSOR.execute(sql_execute_query)
+        db_user_data = self.DB_CURSOR.fetchone()
+
+        # Create the dict that contains all the user data that will be returned
+        return_user_data_dict = dict()
+        return_user_data_dict["UID"] =  db_user_data[0]
+        return_user_data_dict["Username"] = db_user_data[1]
+        return_user_data_dict["Password"] = db_user_data[2]
+        return_user_data_dict["FirstName"] = db_user_data[3]
+        return_user_data_dict["LastName"] = db_user_data[4]
+        return_user_data_dict["Age"] = db_user_data[5]
+        return_user_data_dict["City"] = db_user_data[6]
+        return_user_data_dict["PostalCode"] = db_user_data[7]
+        return_user_data_dict["StreetName"] = db_user_data[8]
+        return_user_data_dict["HouseNumber"] = db_user_data[9]
+        return_user_data_dict["Salary"] = db_user_data[10]
+
+        # Return the dict that contains the user data
+        return return_user_data_dict
+
     def client_login_username_password(self, client_message, client_socket_token):
         """
         The user is at the first point of the login. They want to log in using the username and the password. 
         The body structure looks like this : {USERNAME:{0}|PASSWORD:{1}}. 
-        The next steps are the following:
+        Following steps:
         
         1. Extract the username & the password from the body
         2. Check to see if the username and the password are valid credentials inside the db
@@ -111,17 +285,14 @@ class Server:
         ######################### STEP 1 #########################
         # Extract the body from the client message ( delete the additionally addeded curly braces at the start & the end of the body before extracting the credentials out of it )
         client_message_body = client_message[client_message.index("}")+2:-1]
-        client_message_body = client_message_body[1:-1]
 
         # Extract username & password
         client_message_Username, client_message_Password = client_message_body.split("|")
         client_message_Username = client_message_Username.split(":")[1]
         client_message_Password = client_message_Password.split(":")[1]
-        print("CLIENT USERNAME -- > {0}".format(client_message_Username))
-        print("CLIENT PASSWORD -- > {0}".format(client_message_Password))
         ######################### STEP 1 #########################
         ######################### STEP 2 #########################
-        user_credentials = self.check_username_password_credentials(client_message_Username, client_message_Password)
+        user_credentials = self.DB_check_username_password_credentials(client_message_Username, client_message_Password)
         ######################### STEP 2 #########################
         ######################### STEP 3 #########################
         server_response_message = None
@@ -131,16 +302,26 @@ class Server:
             UID = user_credentials[1]
 
             server_response_message = "SERVER_LOGIN_INFO_USERNAME_PASSWORD_SUCCESSFUL_{0}".format(UID)
+
+            # Use the stream and the file logger to register the successful login - step 1 -
+            logger_info_message = "SUCCESSFUL STEP 1 LOGIN FROM {0}".format(client_socket_token.getpeername())
+            self.stream_logger.error(logger_info_message)
+            self.file_logger.error(logger_info_message)
         else:
             # ( False, None )
             server_response_message = "SERVER_LOGIN_INFO_USERNAME_PASSWORD_WRONG"
+
+            # Use the stream- and file logger to register the failed login attempt
+            logger_error_message = "FAILED STREAM LOG FROM {0}".format(client_socket_token.getpeername())
+            self.stream_logger.error(logger_error_message)
+            self.file_logger.error(logger_error_message)
+
 
         # Send the response back to the client
         client_socket_token.send(server_response_message.encode("utf-8"))
         ######################### STEP 3 #########################
 
-    def check_username_password_credentials(self, username, password):
-        print("CHECKING USERNAME AND PASSWORD CREDENTIALS")
+    def DB_check_username_password_credentials(self, username, password):
         """
         Checks if the given username & password can be found in the db.
         If found returns:
@@ -150,23 +331,16 @@ class Server:
         """
 
         # Fetch the data from the DB using the cursor
-        self.DB_CURSOR.execute("SELECT UID, Username, Password FROM users WHERE Username='{0}' AND Password='{1}'".format(
+        sql_select_query = "SELECT UID, Username, Password FROM users WHERE Username='{0}' AND Password='{1}'".format(
             username, password
-        ))
+        )
+        self.DB_CURSOR.execute(sql_select_query)
         fetched_user_credentials_UID_username_password = self.DB_CURSOR.fetchone()
-        print(fetched_user_credentials_UID_username_password)
-        print("SELECT UID, Username, Password FROM users WHERE Username='{0}' AND Password='{1}'".format(
-            username, password
-        ))
 
         if fetched_user_credentials_UID_username_password:
-            print("SENDING BACK TRUE RESPONSE FROM CHECKING USERNAME AND PASSWORD CREDENTIALS")
-            print(fetched_user_credentials_UID_username_password)
             return (True, fetched_user_credentials_UID_username_password[0])
         else:
-            print("SENDING BACK FALSE RESPONSE FROM CHECKING USERNAME AND PASSWORD CREDENTIALS")
             return (False, None)
-
 
     def create_file_stream_loggers(self):
         """

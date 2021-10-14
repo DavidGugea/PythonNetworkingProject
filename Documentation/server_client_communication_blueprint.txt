@@ -14,22 +14,33 @@ Inside the body we will have data given from the user. It's like an HTTP/HTTPS g
 
 POSSIBLE HEADER VALUES & RESPONSES FROM THE SERVER:
 
-I will use double curly braces inside the body in order to format it correctly with python
+-------------------------------------------------------------------- LOGIN --------------------------------------------------------------------
 
 {CLIENT_LOGIN_INFO_USERNAME_PASSWORD} -> Used when the client is logging in with the username and password
-Body structure : {{USERNAME:{0}|PASSWORD:{1}}}
+Body structure : {USERNAME:{0}|PASSWORD:{1}}
 RESPONSE FROM THE SERVER:
 Successful:
 SERVER_LOGIN_INFO_USERNAME_PASSWORD_SUCCESSFUL_<UID>
 Username or password wrong:
 SERVER_LOGIN_INFO_USERNAME_PASSWORD_WRONG
 
-{CLIENT_LOGIN_INFO_UID} -> Used when the client is logging in with the UID, after a successfull username & password response
-Body structure : {{UID:{0}:|USERNAME:{1}|PASSWORD:{2}|...}}
-RESPONSE FROM THE SERVER:
-Successful:
-{{SERVER_LOGIN_INFO_UID_SUCCESSFULL}{UID:<UID>, Username: <>, Password: <>, FirstName : <> , ...}}
-UID wrong:
-SERVER_LOGIN_INFO_UID_WRONG
+If the UID is given in correctly by the user from the client:
+{CLIENT_LOGIN_INFO_UID_SUCCESSFUL} -> Used when the client is logging in with the UID, after a successfull username & password response
+Body structure : {UID:{0}}
+RESPONSE FROM THE SERVER ( The body in this case will look like a dict in python, returned as a string from the server it will be eval-ed inside the client. This will make it easier to create the user object that will be bound to a certain client ):
+{SERVER_LOGIN_INFO_UID_SUCCESSFULL}{UID:<UID>,Username:<>,Password:<>,FirstName:<>,...}
+
+If the UID given by the user inside the client is not valid:
+{CLIENT_LOGIN_INFO_UID_NOT_VALID}
+
+-------------------------------------------------------------------- LOGIN --------------------------------------------------------------------
+-------------------------------------------------------------------- REGISTER --------------------------------------------------------------------
+
+CLIENT : {CLIENT_REGISTER_DATA}{USERNAME:{0}|PASSWORD:{1}, ...}
+SERVER:
+1. {SERVER_REGISTER_INFO_ERROR} -- Send this when something went wrong when trying to add a new user to the database
+2. {SERVER_REGISTER_INFO_SUCCESSFUL} -- Send this when the server has successfully added a new user to the database
+
+-------------------------------------------------------------------- REGISTER --------------------------------------------------------------------
 
 **************** HEADER, BODY AND RESPONSE STYLE ****************
