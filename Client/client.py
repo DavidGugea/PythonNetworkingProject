@@ -1,7 +1,8 @@
-from ctypes import get_errno
 import socket # Use the socket module in order to connect to the server
 from ..User.user import User # From outside toplevel > python -m <top_level>.Client.client
 import sys # Close the client when needed
+from ctypes import get_errno
+from concurrent import futures
 
 class InputEmptyException(Exception):
     def __init__(self, error_msg=None):
@@ -24,6 +25,20 @@ class InputOutOfBounds(Exception):
             )
         else:
             self.error_msg = error_msg
+
+class InputUnallowedCharacters(Exception):
+    def __init__(self, error_msg=None, unallowed_characters_tuple=('{', '}')):
+        if error_msg:
+            self.error_msg = error_msg
+        else:
+            self.error_msg = "Your input contains unallowed characters. The unallowed characters are : {0}".format(unallowed_characters_tuple)
+
+class InputUnknownCommand(Exception):
+    def __init__(self, error_msg=None):
+        if error_msg:
+            self.error_msg = error_msg
+        else:
+            self.error_msg = "Unknown command. Try again."
 
 class Client():
     def __init__(self, IPv4, PORT):
@@ -90,6 +105,110 @@ class Client():
             USER_DATA["HouseNumber"],
             USER_DATA["Salary"]
         )
+
+        # Allow the user to start communicating with other clients
+        self.start_communicating()
+
+    def start_communicating(self):
+        """
+        Allow the user to start communicating with other clients
+        """
+
+        # Create a non blocking client socket and connect it to the server
+        communication_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+        communication_socket.connect(
+            (self.IPv4, self.PORT)
+        )
+        communication_socket.setblocking(False)
+
+        # Use the communication socket to send the username of the client to the server so it can be registered by the server inside a dictionary that contains the address of the client as well
+        HEADER = "{CLIENT_COMMUNICATION_DATA}"
+        BODY = "{{{0}}}".format(self.user.Username)
+        communication_socket_client_username = "{0}{1}".format(
+            HEADER, BODY
+        )
+
+        communication_socket.send(communication_socket_client_username.encode("utf-8"))
+
+        # Let the user communicate with other sockets
+        for i in range(3):
+            print()
+
+        print("-"*25)
+
+        print("Info")
+        print("Send message to a username > 'username_your message'")
+        print("Get your data > 'getData'")
+        print("Exit > 'exit'")
+
+        print("-"*25)
+
+        for i in range(3):
+            print()
+
+        while True:
+            try:
+                user_input = input("> ")
+
+                # Custom error handling
+                if not user_input:
+                    raise InputEmptyException()
+                elif ("{" in user_input) or ("}" in user_input):
+                    raise InputUnallowedCharacters()
+                elif (len(user_input.split("_")) != 2) and (user_input != "getData" and user_input != "exit"):
+                    raise InputUnknownCommand()
+                
+                # Look at all the different options
+                if user_input == "getData":
+                    print(self.user.get_data())
+                elif user_input == "exit":
+                    sys.exit(0)
+                else:
+                    """
+                    Send the message to the server
+                    When the client wants to send data to the server:
+
+                    CLIENT : {CLIENT_MESSAGE}{<RECEIVER_USERNAME>_<MESSAGE>}
+
+                    In case that the username doesn't exist:
+                    SERVER : {CLIENT_MESSAGE_ERROR_USERNAME_NOT_FOUND}
+                    """
+
+                    HEADER = "{CLIENT_MESSAGE}"
+                    BODY = "{{{0}}}".format(user_input)
+                    client_message = "{0}{1}".format(
+                        HEADER, BODY
+                    )
+
+                    communication_socket.send(
+                        client_message.encode("utf-8")
+                    )
+            except (InputEmptyException, InputUnallowedCharacters, InputUnknownCommand) as e:
+                self.errorMessage(e)
+
+            """
+            We are going to add a timeout here since after an input we are trying to use .recv() to read something from the buffer that we got from the server.
+            The problem is that if we don't put a timeout before reading the buffer, we'll skip the .recv() since the server needed more time to transfer the message to the client socket.
+            This would mean that we would have another input and >afterwards< we would read the buffer.
+            By setting a timeout on the communication socket we can ensure that we'll give the server enough time to process the given information and return it back to the client
+            """
+            communication_socket.settimeout(0.2)
+
+            for i in range(2):
+                try:
+                    server_message = communication_socket.recv(1024)
+
+                    if server_message:
+                        print("A MESSAGE WAS RECEIVED FROM THE SERVER")
+                        server_message = server_message.decode("utf-8")
+
+                        print("SERVER MESSAGE -- > {0}".format(
+                            server_message
+                        ))
+                except (BlockingIOError, socket.timeout):
+                    # BlockingIOError -- > We get this from .recv() since we have a non blocking communication socket
+                    # socket.timeout -- > Used when .recv() is executed during a timeout
+                    pass
 
     def LOGIN_USERNAME_PASSWORD(self):
         """

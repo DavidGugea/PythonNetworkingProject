@@ -42,5 +42,21 @@ SERVER:
 2. {SERVER_REGISTER_INFO_SUCCESSFUL} -- Send this when the server has successfully added a new user to the database
 
 -------------------------------------------------------------------- REGISTER --------------------------------------------------------------------
+-------------------------------------------------------------------- COMMUNICATION --------------------------------------------------------------------
+-- When the client wants to start communicating with other clients, it will create a non blocking client socket that will bind to the server.
+That non blocking client socket must send a message to the server, with the Username, so the server can save the username and the address of the client socket inside a dictionary.
+
+CLIENT : {CLIENT_COMMUNICATION_DATA}{<USERNAME>}
+
+-- When the client wants to send data to the server:
+
+CLIENT : {CLIENT_MESSAGE}{<RECEIVER_USERNAME>_<MESSAGE>}
+
+In case that the username doesn't exist:
+SERVER : {CLIENT_MESSAGE_ERROR_USERNAME_NOT_FOUND}
+
+-- When the client gets a message:
+
+-------------------------------------------------------------------- COMMUNICATION --------------------------------------------------------------------
 
 **************** HEADER, BODY AND RESPONSE STYLE ****************

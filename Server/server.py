@@ -1,8 +1,9 @@
 import socket # Used for handling connections
 import selectors # High level I/O multiplexing
 import logging # Used for stream & file handling in order to monitor connections to the server socket
-import sqlite3
-from sqlite3.dbapi2 import IntegrityError # Connect to the DB in order to send responses back to the clients in order to check login/register data
+import sqlite3 # Connect to the DB in order to send responses back to the clients in order to check login/register data
+from sqlite3.dbapi2 import IntegrityError
+import sys # Close the server when needed
 
 class Server:
     def __init__(self, IPv4, PORT, monitoringFileName):
@@ -32,7 +33,7 @@ class Server:
         )
         self.server_socket.setblocking(False)
         # the backlog specifies the number of unaccepted connections that the system will allow before refusing new connections.
-        self.server_socket.listen(2)
+        self.server_socket.listen(100)
 
         # Get the stream & file loggers in order to monitor connections to the server
         self.stream_logger, self.file_logger = self.create_file_stream_loggers()
@@ -91,6 +92,10 @@ class Server:
                 self.client_login_uid(client_message, client_socket_token)
             elif client_message.startswith("{CLIENT_REGISTER_DATA}"):
                 self.register_user(client_message, client_socket_token)
+            elif client_message.startswith("{CLIENT_COMMUNICATION_DATA}"):
+                self.save_client_for_communication(client_message, client_socket_token)
+            elif client_message.startswith("{CLIENT_MESSAGE}"):
+                self.send_message_to_another_client(client_message, client_socket_token)
         else:
             # Delete the registered UID from the currently connected users dict
             unregister_client_socket_token_address = client_socket_token.getpeername()
@@ -115,6 +120,71 @@ class Server:
             logger_info_string = "Connection lost with {0}".format(client_address)
             self.stream_logger.info(logger_info_string)
             self.file_logger.info(logger_info_string)
+
+    def send_message_to_another_client(self, client_message, client_socket_token):
+        """
+        Send the given message from the client to another client by reading the client_message and extracting the username and the message out of the body.
+        Afterwards, look inside the dictionary that contains all the addresses for all the currently registered clients and their usernames, look for the address, and send the message to the given username
+
+        STEPS:
+        
+        1. Extract the username and the message from the client message body
+        2. Look for the given username inside the dictionary that contains all the currently connected users and try to get the address of the client.
+        3. If the given username was not connected to the server at the moment, return a response that contains that message back to the client. Otherwise, send the message to the client
+        """
+
+        client_receiver_address_found = True
+        client_receiver_address = None
+
+        ############################# STEP 1 #############################
+        # 1. Extract the username and the message from the client message body
+        client_message_body = client_message[client_message.index("}")+2:-1]
+        username, message = client_message_body.split("_")
+
+        print(username, message)
+
+        ############################# STEP 1 #############################
+        ############################# STEP 2 #############################
+        # 2. Look for the given username inside the dictionary that contains all the currently connected users and try to get the address of the client.
+        try:
+            client_receiver_address = self.currently_connected_users[username]
+        except KeyError:
+            print("KEY ERROR DETECTED.")
+            client_receiver_address_found = False
+        
+        ############################# STEP 2 #############################
+        ############################# STEP 3 #############################
+        # 3. If the given username was not connected to the server at the moment, return a response that contains that message back to the client. Otherwise, send the message to the client
+        if not client_receiver_address_found:
+            server_response_client_message_error_username_not_found = "{CLIENT_MESSAGE_ERROR_USERNAME_NOT_FOUND}"
+            print("I JUST SENT AN ERROR MESSAGE TO THE CLIENT")
+            client_socket_token.send(server_response_client_message_error_username_not_found.encode("utf-8"))
+        else:
+            # Send the message to the client
+            pass
+
+        ############################# STEP 3 #############################
+
+
+    def save_client_for_communication(self, client_message, client_socket_token):
+        """
+        This method will save the client so it can communicate with other clients. 
+        The client will be saved inside self.currently_connected_users. The username will be the key, the address of the client will be the address.
+
+        CLIENT : {CLIENT_COMMUNICATION_DATA}{<USERNAME>}
+        """
+
+        # Get the username out of the client_message
+        client_username = client_message[client_message.index("}")+2:-1]
+        self.currently_connected_users[client_username] = client_socket_token.getpeername()
+
+        # Use the stream and file logger to register the new client and its username
+        logger_message = "New communication socket with the username {0} connected. Address : {1}".format(
+            client_username,
+            client_socket_token.getpeername()
+        )
+        self.stream_logger.info(logger_message)
+        self.file_logger.info(logger_message)
 
     def register_user(self, client_message, client_socket_token):
         '''
@@ -196,7 +266,7 @@ class Server:
         
         1. Extract the UID from the body
         2. Get all the values of the user from the DB based on the given UID from the body
-        3. Save the registered UID and its address & use the stream- and file logger to log the successful connection to the server
+        3. Use the stream- and file logger to log the successful connection to the server
         4. Pack all the values of the user inside a dict and send it back to the client
         """
         
@@ -211,11 +281,11 @@ class Server:
         user_data = self.DB_get_user_data_with_UID(client_UID)
         ######################### STEP 2 #########################
         ######################### STEP 3 #########################
-        # 3. Save the registered UID and its address & use the stream- and file logger to log the successful connection to the server
+        # 3. Use the stream- and file logger to log the successful connection to the server
 
         self.currently_connected_users[user_data.get("Username")] = client_socket_token.getpeername()
 
-        logger_user_registered_message = "Successful UID login > Username : {0} | Address : {1}".format(
+        logger_user_registered_message = "Successful UID login > UID : {0} | Address : {1}".format(
             user_data.get("UID"),
             client_socket_token.getpeername()
         )
