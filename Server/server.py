@@ -139,17 +139,14 @@ class Server:
         ############################# STEP 1 #############################
         # 1. Extract the username and the message from the client message body
         client_message_body = client_message[client_message.index("}")+2:-1]
-        username, message = client_message_body.split("_")
-
-        print(username, message)
+        sender_username, receiver_username, sender_message = client_message_body.split("_")
 
         ############################# STEP 1 #############################
         ############################# STEP 2 #############################
         # 2. Look for the given username inside the dictionary that contains all the currently connected users and try to get the address of the client.
         try:
-            client_receiver_address = self.currently_connected_users[username]
+            client_receiver_address = self.currently_connected_users[receiver_username]
         except KeyError:
-            print("KEY ERROR DETECTED.")
             client_receiver_address_found = False
         
         ############################# STEP 2 #############################
@@ -157,14 +154,36 @@ class Server:
         # 3. If the given username was not connected to the server at the moment, return a response that contains that message back to the client. Otherwise, send the message to the client
         if not client_receiver_address_found:
             server_response_client_message_error_username_not_found = "{CLIENT_MESSAGE_ERROR_USERNAME_NOT_FOUND}"
-            print("I JUST SENT AN ERROR MESSAGE TO THE CLIENT")
             client_socket_token.send(server_response_client_message_error_username_not_found.encode("utf-8"))
         else:
-            # Send the message to the client
-            pass
+            # Format the message from the server
+            HEADER = "{MESSAGE_FROM_CLIENT}"
+            body_message = "{0}_{1}".format(
+                sender_username, sender_message
+            )
+            BODY = "{{{0}}}".format(
+                body_message
+            )
+
+            server_message = "{0}{1}".format(
+                HEADER, BODY
+            )
+
+            print("-------------- INFO DATA --------------")
+            print("sender username -- > {0}".format(sender_username))
+            print("receiver_username -- > {0}".format(receiver_username))
+            print("sender_message -- > {0}".format(sender_message))
+            print("currently connected usernames -- > {0}".format(self.currently_connected_users.keys()))
+            print("currently connected addresses -- > {0}".format(self.currently_connected_users.values()))
+            print("-------------- INFO DATA --------------")
+
+            # Send the message to the receiver
+            self.server_socket.sendto(
+                server_message.encode("utf-8"),
+                self.currently_connected_users.get(receiver_username)
+            )
 
         ############################# STEP 3 #############################
-
 
     def save_client_for_communication(self, client_message, client_socket_token):
         """
@@ -185,6 +204,8 @@ class Server:
         )
         self.stream_logger.info(logger_message)
         self.file_logger.info(logger_message)
+
+        print(self.currently_connected_users)
 
     def register_user(self, client_message, client_socket_token):
         '''

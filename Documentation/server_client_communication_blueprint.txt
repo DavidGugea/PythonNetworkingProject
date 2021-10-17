@@ -50,12 +50,14 @@ CLIENT : {CLIENT_COMMUNICATION_DATA}{<USERNAME>}
 
 -- When the client wants to send data to the server:
 
-CLIENT : {CLIENT_MESSAGE}{<RECEIVER_USERNAME>_<MESSAGE>}
+CLIENT : {CLIENT_MESSAGE}{<SENDER_USERNAME>_<RECEIVER_USERNAME>_<MESSAGE>}
+
 
 In case that the username doesn't exist:
 SERVER : {CLIENT_MESSAGE_ERROR_USERNAME_NOT_FOUND}
 
 -- When the client gets a message:
+SERVER : {MESSAGE_FROM_CLIENT}{<Sender_username>_<message>}
 
 -------------------------------------------------------------------- COMMUNICATION --------------------------------------------------------------------
 

@@ -2,7 +2,6 @@ import socket # Use the socket module in order to connect to the server
 from ..User.user import User # From outside toplevel > python -m <top_level>.Client.client
 import sys # Close the client when needed
 from ctypes import get_errno
-from concurrent import futures
 
 class InputEmptyException(Exception):
     def __init__(self, error_msg=None):
@@ -168,14 +167,16 @@ class Client():
                     Send the message to the server
                     When the client wants to send data to the server:
 
-                    CLIENT : {CLIENT_MESSAGE}{<RECEIVER_USERNAME>_<MESSAGE>}
+                    CLIENT : {CLIENT_MESSAGE}{<SENDER_USERNAME>_<RECEIVER_USERNAME>_<MESSAGE>}
 
                     In case that the username doesn't exist:
                     SERVER : {CLIENT_MESSAGE_ERROR_USERNAME_NOT_FOUND}
                     """
 
                     HEADER = "{CLIENT_MESSAGE}"
-                    BODY = "{{{0}}}".format(user_input)
+                    receiver_username, message = user_input.split("_")
+                    body_message = "{0}_{1}_{2}".format(self.user.Username, receiver_username, message)
+                    BODY = "{{{0}}}".format(body_message)
                     client_message = "{0}{1}".format(
                         HEADER, BODY
                     )
@@ -196,14 +197,19 @@ class Client():
 
             for i in range(2):
                 try:
-                    server_message = communication_socket.recv(1024)
+                    server_message = communication_socket.recv(1024).decode("utf-8")
 
-                    if server_message:
-                        print("A MESSAGE WAS RECEIVED FROM THE SERVER")
-                        server_message = server_message.decode("utf-8")
+                    if server_message == "{CLIENT_MESSAGE_ERROR_USERNAME_NOT_FOUND}":
+                        print("Username not found. We couldn't send the message")
+                    elif server_message.startswith("{MESSAGE_FROM_CLIENT}"):
+                        # SERVER : {MESSAGE_FROM_CLIENT}{<Sender_username>_<message>}
+                        # Extract the message from the server
+                        server_message_body = server_message[server_message.split("}")+2:-1]
+                        sender_username, sender_message = server_message_body.split("_")
 
-                        print("SERVER MESSAGE -- > {0}".format(
-                            server_message
+                        print("{0} > {1}".format(
+                            sender_username,
+                            sender_message
                         ))
                 except (BlockingIOError, socket.timeout):
                     # BlockingIOError -- > We get this from .recv() since we have a non blocking communication socket
