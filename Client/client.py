@@ -193,7 +193,7 @@ class Client():
             This would mean that we would have another input and >afterwards< we would read the buffer.
             By setting a timeout on the communication socket we can ensure that we'll give the server enough time to process the given information and return it back to the client
             """
-            communication_socket.settimeout(0.2)
+            communication_socket.settimeout(0.05)
 
             for i in range(2):
                 try:
@@ -297,7 +297,7 @@ class Client():
                 client.send("{CLIENT_LOGIN_INFO_UID_NOT_VALID}".encode("utf-8"))
                 self.errorMessage(error_msg="Wrong UID. Try again")
 
-                if try_counter == 5:
+                if try_counter == 6:
                     sys.exit(0)
 
                 continue
