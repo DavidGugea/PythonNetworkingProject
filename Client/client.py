@@ -3,21 +3,23 @@ from ..User.user import User # From outside toplevel > python -m <top_level>.Cli
 import sys # Close the client when needed
 from ctypes import get_errno
 
+
 class InputEmptyException(Exception):
     def __init__(self, error_msg=None):
-        '''Raise this exception when you are asking the user for an input and the input remains empty'''
+        """Raise this exception when you are asking the user for an input and the input remains empty"""
         if not error_msg:
             self.error_msg = "Your input can't be empty"
         else:
             self.error_msg = error_msg
 
+
 class InputOutOfBounds(Exception):
     def __init__(self, min=None, max=None, error_msg=None):
-        '''
+        """
             Raise this exception when you are asking the user for an input and the input exceeds certain limits.
             If you give the min and max values, this exception will create an error message using them.
             If you give the error_msg value, you will be able to create your own custom message
-        '''
+        """
         if min and max:
             self.error_msg = "Your input is exceeding certain limits >> Min : {0} | Max : {1} <<".format(
                 min, max
@@ -25,12 +27,14 @@ class InputOutOfBounds(Exception):
         else:
             self.error_msg = error_msg
 
+
 class InputUnallowedCharacters(Exception):
     def __init__(self, error_msg=None, unallowed_characters_tuple=('{', '}')):
         if error_msg:
             self.error_msg = error_msg
         else:
             self.error_msg = "Your input contains unallowed characters. The unallowed characters are : {0}".format(unallowed_characters_tuple)
+
 
 class InputUnknownCommand(Exception):
     def __init__(self, error_msg=None):
@@ -195,26 +199,28 @@ class Client():
             """
             communication_socket.settimeout(0.05)
 
-            for i in range(2):
-                try:
-                    server_message = communication_socket.recv(1024).decode("utf-8")
+            try:
+                server_message = communication_socket.recv(1024).decode("utf-8")
 
-                    if server_message == "{CLIENT_MESSAGE_ERROR_USERNAME_NOT_FOUND}":
-                        print("Username not found. We couldn't send the message")
-                    elif server_message.startswith("{MESSAGE_FROM_CLIENT}"):
-                        # SERVER : {MESSAGE_FROM_CLIENT}{<Sender_username>_<message>}
-                        # Extract the message from the server
-                        server_message_body = server_message[server_message.split("}")+2:-1]
-                        sender_username, sender_message = server_message_body.split("_")
+                if server_message == "{CLIENT_MESSAGE_ERROR_USERNAME_NOT_FOUND}":
+                    print("Username not found. We couldn't send the message")
+                elif server_message.startswith("{MESSAGE_FROM_CLIENT}"):
+                    # Extract the message from the server
+                    # SERVER: {MESSAGE_FROM_CLIENT}{<Sender_username>_<message>;<Receiver_Addr>}
+                    server_message_body = server_message[server_message.index("}")+2:-1].split(";")
 
+                    server_receiver_client_token_raddr = server_message_body[1]
+                    sender_username, sender_message = server_message_body[0].split("_")
+
+                    if str(communication_socket.getsockname()) != server_receiver_client_token_raddr:
                         print("{0} > {1}".format(
                             sender_username,
                             sender_message
                         ))
-                except (BlockingIOError, socket.timeout):
-                    # BlockingIOError -- > We get this from .recv() since we have a non blocking communication socket
-                    # socket.timeout -- > Used when .recv() is executed during a timeout
-                    pass
+            except (BlockingIOError, socket.timeout):
+                # BlockingIOError -- > We get this from .recv() since we have a non blocking communication socket
+                # socket.timeout -- > Used when .recv() is executed during a timeout
+                pass
 
     def LOGIN_USERNAME_PASSWORD(self):
         """

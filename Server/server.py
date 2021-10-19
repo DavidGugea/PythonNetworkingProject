@@ -22,7 +22,7 @@ class Server:
         The structure of the dict:
         
         keys : Username ( from DB, after the client has been registered )
-        values : Client socket token address ( .getpeername () )
+        values : Client socket token
         """
         self.currently_connected_users = dict()
 
@@ -97,14 +97,12 @@ class Server:
             elif client_message.startswith("{CLIENT_MESSAGE}"):
                 self.send_message_to_another_client(client_message, client_socket_token)
         else:
-            # Delete the registered UID from the currently connected users dict
-            unregister_client_socket_token_address = client_socket_token.getpeername()
-
-            if unregister_client_socket_token_address in self.currently_connected_users.values():
+            # Delete the registered client from the currently connected users dict
+            if client_socket_token in self.currently_connected_users.values():
                 key_to_delete = None
 
                 for key, value in self.currently_connected_users.items():
-                    if value == unregister_client_socket_token_address:
+                    if value == client_socket_token:
                         key_to_delete = key
                         break
                     else:
@@ -157,9 +155,12 @@ class Server:
             client_socket_token.send(server_response_client_message_error_username_not_found.encode("utf-8"))
         else:
             # Format the message from the server
+            # SERVER: {MESSAGE_FROM_CLIENT}{<Sender_username>_<message>;<Receiver_Addr>}
+
             HEADER = "{MESSAGE_FROM_CLIENT}"
-            body_message = "{0}_{1}".format(
-                sender_username, sender_message
+
+            body_message = "{0}_{1};{2}".format(
+                sender_username, sender_message, client_socket_token.getpeername()
             )
             BODY = "{{{0}}}".format(
                 body_message
@@ -169,19 +170,12 @@ class Server:
                 HEADER, BODY
             )
 
-            print("-------------- INFO DATA --------------")
-            print("sender username -- > {0}".format(sender_username))
-            print("receiver_username -- > {0}".format(receiver_username))
-            print("sender_message -- > {0}".format(sender_message))
-            print("currently connected usernames -- > {0}".format(self.currently_connected_users.keys()))
-            print("currently connected addresses -- > {0}".format(self.currently_connected_users.values()))
-            print("-------------- INFO DATA --------------")
-
-            # Send the message to the receiver
-            self.server_socket.sendto(
-                server_message.encode("utf-8"),
-                self.currently_connected_users.get(receiver_username)
-            )
+            # Send the message to all the clients. Each client will then separately check for the address to match
+            for client in self.currently_connected_users.values():
+                try:
+                    client.send(server_message.encode("utf-8"))
+                except BrokenPipeError:
+                    pass
 
         ############################# STEP 3 #############################
 
@@ -195,7 +189,7 @@ class Server:
 
         # Get the username out of the client_message
         client_username = client_message[client_message.index("}")+2:-1]
-        self.currently_connected_users[client_username] = client_socket_token.getpeername()
+        self.currently_connected_users[client_username] = client_socket_token
 
         # Use the stream and file logger to register the new client and its username
         logger_message = "New communication socket with the username {0} connected. Address : {1}".format(
@@ -204,8 +198,6 @@ class Server:
         )
         self.stream_logger.info(logger_message)
         self.file_logger.info(logger_message)
-
-        print(self.currently_connected_users)
 
     def register_user(self, client_message, client_socket_token):
         '''
@@ -462,6 +454,7 @@ class Server:
 
         # Return the loggers inside a tuple > ( STREAM_LOGGER, FILE_LOGGER )
         return ( stream_logger, file_logger )
+
 
 server = Server(socket.gethostname(), 55555, "connections.log")
 

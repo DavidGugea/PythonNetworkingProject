@@ -57,7 +57,7 @@ In case that the username doesn't exist:
 SERVER : {CLIENT_MESSAGE_ERROR_USERNAME_NOT_FOUND}
 
 -- When the client gets a message:
-SERVER : {MESSAGE_FROM_CLIENT}{<Sender_username>_<message>}
+SERVER : {MESSAGE_FROM_CLIENT}{<Sender_username>_<message>;<Receiver_Addr>}
 
 -------------------------------------------------------------------- COMMUNICATION --------------------------------------------------------------------
 
