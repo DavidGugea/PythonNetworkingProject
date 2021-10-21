@@ -160,8 +160,9 @@ class Server:
             HEADER = "{MESSAGE_FROM_CLIENT}"
 
             body_message = "{0}_{1};{2}".format(
-                sender_username, sender_message, client_socket_token.getpeername()
+                sender_username, sender_message, self.currently_connected_users.get(receiver_username).getpeername()
             )
+
             BODY = "{{{0}}}".format(
                 body_message
             )

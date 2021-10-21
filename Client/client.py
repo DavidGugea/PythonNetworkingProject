@@ -1,8 +1,8 @@
 import socket # Use the socket module in order to connect to the server
 from ..User.user import User # From outside toplevel > python -m <top_level>.Client.client
 import sys # Close the client when needed
+from concurrent import futures # Used with the communication socket. 2 workers are assigned to a thread pool executor. One worker works with the input, the other receives messages from the server.
 from ctypes import get_errno
-
 
 class InputEmptyException(Exception):
     def __init__(self, error_msg=None):
@@ -11,7 +11,6 @@ class InputEmptyException(Exception):
             self.error_msg = "Your input can't be empty"
         else:
             self.error_msg = error_msg
-
 
 class InputOutOfBounds(Exception):
     def __init__(self, min=None, max=None, error_msg=None):
@@ -27,7 +26,6 @@ class InputOutOfBounds(Exception):
         else:
             self.error_msg = error_msg
 
-
 class InputUnallowedCharacters(Exception):
     def __init__(self, error_msg=None, unallowed_characters_tuple=('{', '}')):
         if error_msg:
@@ -35,14 +33,12 @@ class InputUnallowedCharacters(Exception):
         else:
             self.error_msg = "Your input contains unallowed characters. The unallowed characters are : {0}".format(unallowed_characters_tuple)
 
-
 class InputUnknownCommand(Exception):
     def __init__(self, error_msg=None):
         if error_msg:
             self.error_msg = error_msg
         else:
             self.error_msg = "Unknown command. Try again."
-
 class Client():
     def __init__(self, IPv4, PORT):
         """
@@ -149,6 +145,17 @@ class Client():
         for i in range(3):
             print()
 
+        # Create a thread pool executor and assign 2 workers to it. One worker must operate the user input and the other one should receive data from the server. We are doing this so we don't have to wait for the user input before seeing the messages that we got from the server.
+        self.thread_pool_executor = futures.ThreadPoolExecutor(max_workers=2)
+        self.thread_pool_executor_user_exit = False # If this value is changed to true then we should stop trying to receive messages from the server
+        self.thread_pool_executor.submit(self.communicationSocketThreadWorker_Input, communication_socket)
+        self.thread_pool_executor.submit(self.communicationSocketThreadWorker_Recv, communication_socket)
+        self.thread_pool_executor.shutdown(True)
+
+    def communicationSocketThreadWorker_Input(self, communication_socket):
+        """
+        Used as a worker for the communication socket. This worker will handle the user input.
+        """
         while True:
             try:
                 user_input = input("> ")
@@ -165,7 +172,8 @@ class Client():
                 if user_input == "getData":
                     print(self.user.get_data())
                 elif user_input == "exit":
-                    sys.exit(0)
+                    self.thread_pool_executor_user_exit = True
+                    sys.exit(0) # Closes the input worker thread
                 else:
                     """
                     Send the message to the server
@@ -188,22 +196,29 @@ class Client():
                     communication_socket.send(
                         client_message.encode("utf-8")
                     )
+
+                    """
+                    We are going to add a timeout here since after an input we are trying to use .recv() to read something from the buffer that we got from the server.
+                    The problem is that if we don't put a timeout before reading the buffer, we'll skip the .recv() since the server needed more time to transfer the message to the client socket.
+                    This would mean that we would have another input and >afterwards< we would read the buffer.
+                    By setting a timeout on the communication socket we can ensure that we'll give the server enough time to process the given information and return it back to the client
+                    """
+                    communication_socket.settimeout(0.05)
             except (InputEmptyException, InputUnallowedCharacters, InputUnknownCommand) as e:
                 self.errorMessage(e)
 
-            """
-            We are going to add a timeout here since after an input we are trying to use .recv() to read something from the buffer that we got from the server.
-            The problem is that if we don't put a timeout before reading the buffer, we'll skip the .recv() since the server needed more time to transfer the message to the client socket.
-            This would mean that we would have another input and >afterwards< we would read the buffer.
-            By setting a timeout on the communication socket we can ensure that we'll give the server enough time to process the given information and return it back to the client
-            """
-            communication_socket.settimeout(0.05)
-
+    def communicationSocketThreadWorker_Recv(self, communication_socket):
+        """
+        Used as a worker for the communication socket. This worker will handle the messages received from the server
+        """
+        while not self.thread_pool_executor_user_exit:
             try:
                 server_message = communication_socket.recv(1024).decode("utf-8")
 
+                # We add the end to be a new line and a > char because the message that we get from the server will collide with the user input and the user won't understand anymore where to write his input.
+                message_end = "\n> "
                 if server_message == "{CLIENT_MESSAGE_ERROR_USERNAME_NOT_FOUND}":
-                    print("Username not found. We couldn't send the message")
+                    print("Username not found. We couldn't send the message", end=message_end)
                 elif server_message.startswith("{MESSAGE_FROM_CLIENT}"):
                     # Extract the message from the server
                     # SERVER: {MESSAGE_FROM_CLIENT}{<Sender_username>_<message>;<Receiver_Addr>}
@@ -212,11 +227,11 @@ class Client():
                     server_receiver_client_token_raddr = server_message_body[1]
                     sender_username, sender_message = server_message_body[0].split("_")
 
-                    if str(communication_socket.getsockname()) != server_receiver_client_token_raddr:
+                    if str(communication_socket.getsockname()) == server_receiver_client_token_raddr:
                         print("{0} > {1}".format(
                             sender_username,
                             sender_message
-                        ))
+                        ), end=message_end) 
             except (BlockingIOError, socket.timeout):
                 # BlockingIOError -- > We get this from .recv() since we have a non blocking communication socket
                 # socket.timeout -- > Used when .recv() is executed during a timeout
@@ -360,8 +375,8 @@ class Client():
         ##################################################### STEP 1 #####################################################
         # 1. Get the user data needed for the registration
 
-        # user_data = self.get_register_data()
-        user_data = "UID:12345|Username:testUsername|Password:testPassword|FirstName:testFirstName|LastName:testLastName|Age:17|City:testCity|PostalCode:12345|StreetName:testStreetName|HouseNumber:11|Salary:800"
+        user_data = self.get_register_data()
+        # For testing -- > user_data = "UID:12345|Username:testUsername|Password:testPassword|FirstName:testFirstName|LastName:testLastName|Age:17|City:testCity|PostalCode:12345|StreetName:testStreetName|HouseNumber:11|Salary:800"
 
         ##################################################### STEP 1 #####################################################
         ##################################################### STEP 2 #####################################################
