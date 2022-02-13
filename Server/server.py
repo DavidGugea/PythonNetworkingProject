@@ -389,8 +389,8 @@ class Server:
 
             # Use the stream and the file logger to register the successful login - step 1 -
             logger_info_message = "SUCCESSFUL STEP 1 LOGIN FROM {0}".format(client_socket_token.getpeername())
-            self.stream_logger.error(logger_info_message)
-            self.file_logger.error(logger_info_message)
+            self.stream_logger.info(logger_info_message)
+            self.file_logger.info(logger_info_message)
         else:
             # ( False, None )
             server_response_message = "SERVER_LOGIN_INFO_USERNAME_PASSWORD_WRONG"

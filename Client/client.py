@@ -1,8 +1,10 @@
-import socket # Use the socket module in order to connect to the server
-from ..User.user import User # From outside toplevel > python -m <top_level>.Client.client
-import sys # Close the client when needed
-from concurrent import futures # Used with the communication socket. 2 workers are assigned to a thread pool executor. One worker works with the input, the other receives messages from the server.
+import socket  # Use the socket module in order to connect to the server
+from ..User.user import User  # From outside toplevel > python -m <top_level>.Client.client
+import sys  # Close the client when needed
+from concurrent import \
+    futures  # Used with the communication socket. 2 workers are assigned to a thread pool executor. One worker works with the input, the other receives messages from the server.
 from ctypes import get_errno
+
 
 class InputEmptyException(Exception):
     def __init__(self, error_msg=None):
@@ -11,6 +13,7 @@ class InputEmptyException(Exception):
             self.error_msg = "Your input can't be empty"
         else:
             self.error_msg = error_msg
+
 
 class InputOutOfBounds(Exception):
     def __init__(self, min=None, max=None, error_msg=None):
@@ -26,12 +29,15 @@ class InputOutOfBounds(Exception):
         else:
             self.error_msg = error_msg
 
+
 class InputUnallowedCharacters(Exception):
     def __init__(self, error_msg=None, unallowed_characters_tuple=('{', '}')):
         if error_msg:
             self.error_msg = error_msg
         else:
-            self.error_msg = "Your input contains unallowed characters. The unallowed characters are : {0}".format(unallowed_characters_tuple)
+            self.error_msg = "Your input contains unallowed characters. The unallowed characters are : {0}".format(
+                unallowed_characters_tuple)
+
 
 class InputUnknownCommand(Exception):
     def __init__(self, error_msg=None):
@@ -39,7 +45,9 @@ class InputUnknownCommand(Exception):
             self.error_msg = error_msg
         else:
             self.error_msg = "Unknown command. Try again."
-class Client():
+
+
+class Client:
     def __init__(self, IPv4, PORT):
         """
         Stores the IPv4 and the PORT for future connections to the server.
@@ -66,14 +74,14 @@ class Client():
 
         for i in range(3):
             print()
-    
+
     def login(self):
         """
         Read ../Documentation/server_client_communication_bluerpint.txt 
         """
 
         # Start the first login step, by asking the user for the username & password. Afterwards, in case that the input from the user was correct and the response from the server was successful, we'll ask the user about his UID ( User ID )
-        SERVER_LOGIN_USERNAME_PASSWORD_RESPONSE = None # Store the server response of the first step inside this variable
+        SERVER_LOGIN_USERNAME_PASSWORD_RESPONSE = None  # Store the server response of the first step inside this variable
         while True:
             SERVER_LOGIN_USERNAME_PASSWORD_RESPONSE = self.LOGIN_USERNAME_PASSWORD()
 
@@ -86,7 +94,8 @@ class Client():
                 break
 
         # Start the second login step, by asking the user for the UID.
-        UID = SERVER_LOGIN_USERNAME_PASSWORD_RESPONSE.split("_")[-1] # SERVER_LOGIN_INFO_USERNAME_PASSWORD_SUCCESSFUL_<UID>
+        UID = SERVER_LOGIN_USERNAME_PASSWORD_RESPONSE.split("_")[
+            -1]  # SERVER_LOGIN_INFO_USERNAME_PASSWORD_SUCCESSFUL_<UID>
 
         # Get the user data from the login with the uid
         USER_DATA = self.LOGIN_UID(UID)
@@ -133,21 +142,21 @@ class Client():
         for i in range(3):
             print()
 
-        print("-"*25)
+        print("-" * 25)
 
         print("Info")
         print("Send message to a username > 'username_your message'")
         print("Get your data > 'getData'")
         print("Exit > 'exit'")
 
-        print("-"*25)
+        print("-" * 25)
 
         for i in range(3):
             print()
 
         # Create a thread pool executor and assign 2 workers to it. One worker must operate the user input and the other one should receive data from the server. We are doing this so we don't have to wait for the user input before seeing the messages that we got from the server.
         self.thread_pool_executor = futures.ThreadPoolExecutor(max_workers=2)
-        self.thread_pool_executor_user_exit = False # If this value is changed to true then we should stop trying to receive messages from the server
+        self.thread_pool_executor_user_exit = False  # If this value is changed to true then we should stop trying to receive messages from the server
         self.thread_pool_executor.submit(self.communicationSocketThreadWorker_Input, communication_socket)
         self.thread_pool_executor.submit(self.communicationSocketThreadWorker_Recv, communication_socket)
         self.thread_pool_executor.shutdown(True)
@@ -167,13 +176,13 @@ class Client():
                     raise InputUnallowedCharacters()
                 elif (len(user_input.split("_")) != 2) and (user_input != "getData" and user_input != "exit"):
                     raise InputUnknownCommand()
-                
+
                 # Look at all the different options
                 if user_input == "getData":
                     print(self.user.get_data())
                 elif user_input == "exit":
                     self.thread_pool_executor_user_exit = True
-                    sys.exit(0) # Closes the input worker thread
+                    sys.exit(0)  # Closes the input worker thread
                 else:
                     """
                     Send the message to the server
@@ -222,7 +231,7 @@ class Client():
                 elif server_message.startswith("{MESSAGE_FROM_CLIENT}"):
                     # Extract the message from the server
                     # SERVER: {MESSAGE_FROM_CLIENT}{<Sender_username>_<message>;<Receiver_Addr>}
-                    server_message_body = server_message[server_message.index("}")+2:-1].split(";")
+                    server_message_body = server_message[server_message.index("}") + 2:-1].split(";")
 
                     server_receiver_client_token_raddr = server_message_body[1]
                     sender_username, sender_message = server_message_body[0].split("_")
@@ -231,7 +240,7 @@ class Client():
                         print("{0} > {1}".format(
                             sender_username,
                             sender_message
-                        ), end=message_end) 
+                        ), end=message_end)
             except (BlockingIOError, socket.timeout):
                 # BlockingIOError -- > We get this from .recv() since we have a non blocking communication socket
                 # socket.timeout -- > Used when .recv() is executed during a timeout
@@ -274,7 +283,7 @@ class Client():
 
         # Store here the response from the server
         SERVER_RESPONSE = None
-        
+
         while True:
             try:
                 server_login_info_username_password_response = login_username_password_client.recv(1024)
@@ -289,7 +298,7 @@ class Client():
                 pass
             finally:
                 login_username_password_client.close()
-            
+
         return SERVER_RESPONSE
 
     def LOGIN_UID(self, VALID_UID):
@@ -371,7 +380,7 @@ class Client():
         client_registration_socket.connect(
             (self.IPv4, self.PORT)
         )
-        
+
         ##################################################### STEP 1 #####################################################
         # 1. Get the user data needed for the registration
 
@@ -428,7 +437,7 @@ class Client():
         # GET : UID
         while True:
             UID = input("UID -- > ")
-            
+
             try:
                 if not UID:
                     raise InputEmptyException()
@@ -453,12 +462,12 @@ class Client():
                     raise InputEmptyException()
                 if len(Username) > 20 or len(Username) < 5:
                     raise InputOutOfBounds(min=5, max=20)
-                
+
                 user_data += "Username:{0}|".format(Username)
                 break
             except (InputEmptyException, InputOutOfBounds) as e:
                 self.errorMessage(e)
-        
+
         # GET : Password
         while True:
             try:
@@ -466,10 +475,10 @@ class Client():
 
                 if not Password:
                     raise InputEmptyException()
-                if len(Password)  > 20 or len(Password) < 5:
-                    raise InputOutOfBounds(min=5,max=20)
+                if len(Password) > 20 or len(Password) < 5:
+                    raise InputOutOfBounds(min=5, max=20)
 
-                user_data += "Password={0}|".format(Password)
+                user_data += "Password:{0}|".format(Password)
                 break
             except (InputEmptyException, InputOutOfBounds) as e:
                 self.errorMessage(e)
@@ -482,28 +491,28 @@ class Client():
                 if not FirstName:
                     raise InputEmptyException()
                 if len(FirstName) < 2 or len(FirstName) > 50:
-                    raise InputOutOfBounds(min = 2, max = 50)
-                
+                    raise InputOutOfBounds(min=2, max=50)
+
                 user_data += "FirstName:{0}|".format(FirstName)
                 break
             except (InputEmptyException, InputOutOfBounds) as e:
                 self.errorMessage(e)
-        
+
         # GET : LastName
         while True:
             try:
-                LastName = input("First name -- > ")
+                LastName = input("Last name -- > ")
 
                 if not LastName:
                     raise InputEmptyException()
                 if len(LastName) < 2 or len(LastName) > 50:
-                    raise InputOutOfBounds(min = 2, max = 50)
-                
+                    raise InputOutOfBounds(min=2, max=50)
+
                 user_data += "LastName:{0}|".format(LastName)
                 break
             except (InputEmptyException, InputOutOfBounds) as e:
                 self.errorMessage(e)
-        
+
         # GET : Age
         while True:
             try:
@@ -515,7 +524,7 @@ class Client():
                 Age = int(Age)
 
                 if Age < 16 or Age > 65:
-                    raise InputOutOfBounds(min = 16, max = 65)
+                    raise InputOutOfBounds(min=16, max=65)
 
                 user_data += "Age:{0}|".format(Age)
                 break
@@ -523,7 +532,7 @@ class Client():
                 self.errorMessage(error_msg="The age must be a number")
             except (InputEmptyException, InputOutOfBounds) as e:
                 self.errorMessage(e)
-        
+
         # GET : City
         while True:
             try:
@@ -532,7 +541,7 @@ class Client():
                 if not City:
                     raise InputEmptyException()
                 if len(City) > 50 or len(City) < 2:
-                    raise InputOutOfBounds(min = 2, max = 50)
+                    raise InputOutOfBounds(min=2, max=50)
 
                 user_data += "City:{0}|".format(City)
                 break
@@ -550,12 +559,12 @@ class Client():
                 PostalCode = int(PostalCode)
 
                 if PostalCode < 10000 or PostalCode > 99999:
-                    raise InputOutOfBounds(min = 10000, max = 99999)
+                    raise InputOutOfBounds(min=10000, max=99999)
 
-                user_data += "PostalCode={0}|".format(PostalCode)
+                user_data += "PostalCode:{0}|".format(PostalCode)
                 break
             except ValueError:
-                self.errorMessage(error_msg = "The postal code must be a number")
+                self.errorMessage(error_msg="The postal code must be a number")
             except (InputEmptyException, InputOutOfBounds) as e:
                 self.errorMessage(e)
 
@@ -567,13 +576,13 @@ class Client():
                 if not StreetName:
                     raise InputEmptyException()
                 if len(StreetName) < 2 or len(StreetName) > 100:
-                    raise InputOutOfBounds(min = 2, max = 100)
-                
-                user_data += "StreetName={0}|".format(StreetName)
+                    raise InputOutOfBounds(min=2, max=100)
+
+                user_data += "StreetName:{0}|".format(StreetName)
                 break
             except (InputEmptyException, InputOutOfBounds) as e:
                 self.errorMessage(e)
-        
+
         # GET : HouseNUmber
         while True:
             try:
@@ -581,19 +590,19 @@ class Client():
 
                 if not HouseNumber:
                     raise InputEmptyException()
-                
+
                 HouseNumber = int(HouseNumber)
 
                 if HouseNumber < 1 or HouseNumber > 100:
                     raise InputOutOfBounds(min=1, max=100)
 
-                user_data += "HouseNumber={0}|".format(HouseNumber)
+                user_data += "HouseNumber:{0}|".format(HouseNumber)
                 break
             except ValueError:
-                self.errorMessage(error_msg = "The house number must be a number between 2 and 100")
+                self.errorMessage(error_msg="The house number must be a number between 2 and 100")
             except (InputEmptyException, InputOutOfBounds) as e:
                 self.errorMessage(e)
-        
+
         # GET : Salary
         while True:
             try:
@@ -601,12 +610,12 @@ class Client():
 
                 if not Salary:
                     raise InputEmptyException()
-                
+
                 Salary = int(Salary)
 
                 if Salary < 400 or Salary > 4000:
-                    raise InputOutOfBounds(min = 400, max = 4000)
-                
+                    raise InputOutOfBounds(min=400, max=4000)
+
                 user_data += "Salary:{0}".format(Salary)
                 break
             except ValueError:
@@ -645,6 +654,7 @@ class Client():
                 break
             except ValueError:
                 self.errorMessage(error_msg="You must input a number.")
+
 
 client = Client(socket.gethostname(), 55555)
 client.start()
