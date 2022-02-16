@@ -229,7 +229,7 @@ class Server:
             key, value = data.split(":")
             user_data[key] = value
 
-        # Update the types inside the user_data where neccessary ( the values that should be integers, are strings )
+        # Update the types inside the user_data where necessary ( the values that should be integers, are strings )
         user_data["UID"] = int(user_data["UID"])
         user_data["Age"] = int(user_data["Age"])
         user_data["PostalCode"] = int(user_data["PostalCode"])
@@ -254,6 +254,7 @@ class Server:
             self.stream_logger.info(logger_message)
             self.file_logger.info(logger_message)
         except IntegrityError:
+            print("SERVER REGISTER INTEGRITY ERROR")
             SERVER_RESPONSE = "{SERVER_REGISTER_INFO_ERROR}"
 
             logger_message = "User couldn't register to the DB. Address -- > {0}".format(

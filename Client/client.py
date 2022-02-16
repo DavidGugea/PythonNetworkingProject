@@ -399,26 +399,26 @@ class Client:
         client_registration_socket.send(client_registration_message.encode("utf-8"))
         ##################################################### STEP 2 #####################################################
         ##################################################### STEP 3 #####################################################
-        # 3. Wait for the resposne from the server
+        # 3. Wait for the response from the server
 
         SERVER_RESPONSE = None
 
         while True:
             try:
-                SERVER_RESPONSE = client_registration_socket.recv(1024)
-                SERVER_RESPONSE.decode("utf-8")
+                SERVER_RESPONSE = client_registration_socket.recv(1024).decode("utf-8")
 
                 if SERVER_RESPONSE:
                     break
             except Exception:
                 pass
-            finally:
-                client_registration_socket.close()
 
+        client_registration_socket.close()
+
+        print("SERVER RESPONSE -- > {0}".format(SERVER_RESPONSE))
         if SERVER_RESPONSE == "{SERVER_REGISTER_INFO_SUCCESSFUL}":
             print("You have been successfully registered to the server")
         elif SERVER_RESPONSE == "{SERVER_REGISTER_INFO_ERROR}":
-            print("Something went wrong when trying to register you to the server")
+            print("Your username, password or/and UID might already be in use. We couldn't register you to the server. Try again.")
         else:
             print("Unknown server response -- > {0}".format(
                 SERVER_RESPONSE

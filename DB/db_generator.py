@@ -23,7 +23,7 @@ class Generator:
         City VARCHAR(50) NOT NULL,
         PostalCode UNSIGNED TINYINT NOT NULL,
         StreetName VARCHAR(100) NOT NULL,
-        HouseNumber UNSINGED TINYINT NOT NULL,
+        HouseNumber UNSIGNED TINYINT NOT NULL,
         Salary UNSIGNED TINYINT NOT NULL
         """
 
